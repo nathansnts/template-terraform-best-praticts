@@ -1,0 +1,41 @@
+module "vpc" {
+  source         = "../../modules/vpc"
+  name           = var.name
+  tags           = var.tags
+  vpc_cidr       = var.vpc_cidr
+  subnets        = var.subnets
+  nat_subnet_key = var.nat_subnet_key
+}
+module "eks" {
+  source                         = "../../modules/eks"
+  name                           = var.name
+  tags                           = var.tags
+  subnet_ids                     = module.vpc.subnet_ids_by_tier["private_eks"]
+  kubernetes_version             = var.kubernetes_version
+  cluster_role_arn               = var.cluster_role_arn
+  node_role_arn                  = var.node_role_arn
+  worker_node_count              = var.worker_node_count
+  worker_instance_type           = var.worker_instance_type
+  endpoint_private_access        = var.endpoint_private_access
+  endpoint_public_access         = var.endpoint_public_access
+  public_access_cidrs            = var.public_access_cidrs
+  enabled_cluster_log_types      = var.enabled_cluster_log_types
+  security_group_ids             = var.eks_security_group_ids
+  worker_launch_template_id      = var.worker_launch_template_id
+  worker_launch_template_version = var.worker_launch_template_version
+  worker_capacity_type           = var.worker_capacity_type
+  depends_on                     = [module.vpc]
+}
+module "ec2" {
+  source             = "../../modules/ec2"
+  name               = var.name
+  tags               = var.tags
+  subnet_id          = module.vpc.subnet_ids_by_tier["private_ec2"][0]
+  instance_type      = var.ec2_instance_type
+  ami_id             = var.ec2_ami_id
+  security_group_ids = var.ec2_security_group_ids
+  instance_profile   = var.ec2_instance_profile
+  root_volume_size   = var.ec2_root_volume_size
+  root_volume_type   = var.ec2_root_volume_type
+  kms_key_arn        = var.ec2_kms_key_arn
+}

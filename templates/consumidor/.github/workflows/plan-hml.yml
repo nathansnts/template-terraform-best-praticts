@@ -1,0 +1,43 @@
+name: Plano hml
+on:
+  push:
+    branches: [hml]
+    paths:
+      - 'environments/hml/*.tf'
+      - 'environments/hml/*.tf.json'
+      - 'environments/hml/*.tfvars'
+      - 'environments/hml/*.tfvars.json'
+      - 'environments/hml/.terraform.lock.hcl'
+      - 'environments/hml/backend.hcl'
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  plan:
+    runs-on: [self-hosted, linux, x64, terraform-hml]
+    environment: hml-plan
+    defaults:
+      run:
+        working-directory: environments/hml
+        shell: bash
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/terraform
+        with:
+          role: ${{ vars.AWS_ROLE_ARN }}
+          bucket: ${{ vars.STATE_BUCKET }}
+          kms: ${{ vars.KMS_KEY_ARN }}
+          config: ${{ vars.TFVARS_JSON }}
+      - name: Validar e salvar o plano no runner
+        run: |
+          terraform fmt -check
+          terraform validate
+          umask 077
+          dir="$HOME/.local/state/terraform-plans/$GITHUB_REPOSITORY/$GITHUB_REF_NAME/$GITHUB_SHA/$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          mkdir -p "$dir"
+          terraform plan -input=false -lock-timeout=5m -out="$dir/tfplan.tmp"
+          mv "$dir/tfplan.tmp" "$dir/tfplan"
+          echo "Identificador: $GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_STEP_SUMMARY"
+          (cd "$dir" && sha256sum tfplan) >> "$GITHUB_STEP_SUMMARY"

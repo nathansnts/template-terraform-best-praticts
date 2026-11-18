@@ -1,0 +1,43 @@
+name: Aplicar plano aprovado
+on:
+  workflow_dispatch:
+    inputs:
+      plano:
+        description: Identificador da execução e tentativa exibido no resumo do plano
+        required: true
+      digest:
+        description: SHA-256 do plano revisado
+        required: true
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  apply:
+    if: github.ref_type == 'branch' && contains(fromJSON('["dev","hml","prd"]'), github.ref_name)
+    environment: ${{ github.ref_name }}
+    runs-on: [self-hosted, linux, x64, "terraform-${{ github.ref_name }}"]
+    concurrency:
+      group: terraform-apply-${{ github.ref_name }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/terraform
+        with:
+          role: ${{ vars.AWS_ROLE_ARN }}
+          bucket: ${{ vars.STATE_BUCKET }}
+          kms: ${{ vars.KMS_KEY_ARN }}
+          config: ${{ vars.TFVARS_JSON }}
+      - name: Verificar e aplicar o plano revisado
+        shell: bash
+        env:
+          PLAN_ID: ${{ inputs.plano }}
+          DIGEST: ${{ inputs.digest }}
+        run: |
+          [[ "$PLAN_ID" =~ ^[0-9]+-[0-9]+$ && "$DIGEST" =~ ^[a-f0-9]{64}$ ]]
+          cd "environments/$GITHUB_REF_NAME"
+          plano="$HOME/.local/state/terraform-plans/$GITHUB_REPOSITORY/$GITHUB_REF_NAME/$GITHUB_SHA/$PLAN_ID/tfplan"
+          echo "$DIGEST  $plano" | sha256sum --check --strict
+          terraform apply -input=false -lock-timeout=5m "$plano"
+          rm -- "$plano"

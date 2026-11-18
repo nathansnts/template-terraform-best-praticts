@@ -1,0 +1,37 @@
+name: Inicializar Terraform
+description: Autenticar via OIDC e inicializar a raiz da branch
+inputs:
+  role:
+    description: ARN da role desta etapa
+    required: true
+  bucket:
+    description: Bucket do state
+    required: true
+  kms:
+    description: Chave KMS do state
+    required: true
+  config:
+    description: Entradas Terraform em JSON
+    required: true
+runs:
+  using: composite
+  steps:
+    - uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502
+      with:
+        role-to-assume: ${{ inputs.role }}
+        aws-region: us-east-1
+    - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd
+      with:
+        terraform_version: 1.17.2
+        terraform_wrapper: false
+    - shell: bash
+      env:
+        BUCKET: ${{ inputs.bucket }}
+        KMS: ${{ inputs.kms }}
+        CONFIG: ${{ inputs.config }}
+      run: |
+        cd "environments/$GITHUB_REF_NAME"
+        echo "$CONFIG" | jq -e 'select(type == "object")' > conta.auto.tfvars.json
+        backend_args=()
+        if [[ -f backend.hcl ]]; then backend_args+=("-backend-config=backend.hcl"); fi
+        terraform init -input=false -lockfile=readonly "${backend_args[@]}" -backend-config="bucket=$BUCKET" -backend-config="kms_key_id=$KMS"
